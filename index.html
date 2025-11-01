@@ -1,0 +1,221 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Nexor Payment — Cyber</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#00eaff">
+<link rel="icon" href="icons/icon-192.png">
+
+<style>
+:root{
+  --neon: #00eaff;
+  --bg: #000814;
+  --card: rgba(3,8,15,0.65);
+  --glass: rgba(255,255,255,0.04);
+  --text: #dff9ff;
+}
+*{box-sizing:border-box}
+body{margin:0;font-family:Inter,system-ui,Arial,sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;align-items:center;justify-content:center;overflow:hidden}
+.container{width:94%;max-width:980px;padding:22px;border-radius:16px;background:linear-gradient(180deg, rgba(0,10,18,0.6), rgba(0,6,12,0.6));border:1px solid rgba(0,255,255,0.06);backdrop-filter: blur(8px);position:relative;z-index:10}
+
+/* HUD: scanlines + vignette */
+#hud{
+  position:fixed;inset:0;pointer-events:none;z-index:5;
+  background: linear-gradient(180deg, rgba(0,0,0,0.0), rgba(0,0,0,0.18));
+}
+.hud-scan{
+  position:absolute;inset:0;background-image:repeating-linear-gradient(180deg, rgba(255,255,255,0.02) 0 1px, transparent 1px 4px);
+  mix-blend-mode:overlay;opacity:0.25;animation:scan 6s linear infinite;
+}
+@keyframes scan{to{background-position:0 100%}}
+
+/* hologram grid (subtle, GPU-friendly) */
+#grid{
+  position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:
+    radial-gradient(circle at 20% 10%, rgba(0,255,255,0.03), transparent 10%),
+    radial-gradient(circle at 80% 90%, rgba(0,255,255,0.02), transparent 12%);
+  filter: blur(6px);
+}
+
+/* layout */
+h1{color:var(--neon);text-align:center;margin:4px 0 18px;font-size:24px}
+.row{display:flex;gap:14px;flex-wrap:wrap;justify-content:center}
+.card{
+  width:150px;padding:12px;border-radius:12px;background:var(--card);border:1px solid rgba(0,255,255,0.08);
+  text-align:center;backdrop-filter: blur(6px);position:relative;overflow:hidden;
+}
+.card::before{content:"";position:absolute;inset:0;pointer-events:none;background:linear-gradient(135deg, rgba(0,255,255,0.02), transparent 40%);mix-blend-mode:screen}
+.card h3{color:var(--neon);margin:6px 0;font-size:15px}
+.card p{margin:6px 0;font-weight:600}
+.btn{
+  display:inline-block;width:100%;padding:8px;border-radius:10px;border:none;background:var(--neon);color:#001014;font-weight:700;cursor:pointer;box-shadow:0 6px 20px rgba(0,180,255,0.06);transition:transform .16s,box-shadow .2s;
+}
+.btn:active{transform:translateY(1px) scale(.995)}
+.btn:hover{box-shadow:0 10px 30px rgba(0,180,255,0.12)}
+
+/* 3D hologram popup */
+#popup{
+  position:fixed;left:50%;top:50%;transform:translate(-50%,-50%) scale(.98);min-width:260px;padding:18px;border-radius:14px;background:linear-gradient(180deg, rgba(0,12,20,0.92), rgba(0,6,12,0.92));border:1px solid rgba(0,255,255,0.14);backdrop-filter: blur(6px);z-index:60;display:none;
+  box-shadow:0 8px 40px rgba(0,200,255,0.06), inset 0 0 40px rgba(0,255,255,0.02);
+}
+/* hologram 3D effect (CSS-only, lightweight) */
+.holo{
+  width:200px;height:200px;margin:8px auto 10px;background:linear-gradient(135deg, rgba(0,255,255,0.06), rgba(0,120,255,0.02));
+  border-radius:8px;border:1px solid rgba(0,255,255,0.12);
+  transform-style:preserve-3d;animation:floaty 3.6s ease-in-out infinite;
+  display:flex;align-items:center;justify-content:center;color:var(--neon);font-weight:700;font-size:12px;
+}
+@keyframes floaty{0%{transform:translateZ(0) rotateX(0) rotateY(0)}50%{transform:translateZ(6px) rotateX(4deg) rotateY(3deg)}100%{transform:translateZ(0) rotateX(0) rotateY(0)}}
+
+/* toast */
+#toast{position:fixed;left:50%;transform:translateX(-50%);bottom:28px;background:#000;border:1px solid var(--neon);color:var(--neon);padding:10px 16px;border-radius:10px;display:none;z-index:70}
+
+/* hidden canvas & img (guaranteed hidden) */
+#qrisImg,#hiddenCanvas{display:none !important;width:0 !important;height:0 !important;opacity:0 !important;visibility:hidden !important}
+
+/* responsive */
+@media(max-width:420px){.card{width:120px;padding:10px}}
+</style>
+</head>
+<body>
+<div id="grid"></div>
+<div id="hud" aria-hidden="true"><div class="hud-scan"></div></div>
+
+<div class="container" role="main" aria-label="Nexor Payment">
+  <h1>Nexor Payment</h1>
+  <div class="row" id="row">
+    <div class="card"><h3>DANA</h3><p id="dana">--</p><button class="btn" data-enc="XgtNAUBrU10ATwVH" onclick="doCopy(this)">Salin</button></div>
+    <div class="card"><h3>SeaBank</h3><p id="seabank">--</p><button class="btn" data-enc="VwNJBkpuWV4BTwlB" onclick="doCopy(this)">Salin</button></div>
+    <div class="card"><h3>QRIS</h3><p style="opacity:.7;font-size:12px">Tersimpan saat klik</p><button class="btn" id="saveQR">Simpan QR</button></div>
+  </div>
+</div>
+
+<div id="popup" role="dialog" aria-hidden="true">
+  <div class="holo" id="holoBox">HOLOGRAM</div>
+  <div style="text-align:center"><small style="opacity:.85">Memproses & menyimpan QR...</small></div>
+</div>
+
+<div id="toast">✅ Disalin</div>
+
+<!-- hidden assets -->
+<img id="qrisImg" src="qris.png" alt="QRIS (hidden)">
+<canvas id="hiddenCanvas" aria-hidden="true"></canvas>
+<audio id="clickSound" src="click_cyber.wav" preload="auto"></audio>
+
+<script>
+/* -------------------------
+ Lightweight obfuscation helpers
+ We'll store ENCRYPTED values (XOR+base64).
+ Decrypt at runtime with key (simple but effective against casual viewers).
+ NOTE: Not cryptographically secure; raises difficulty for casual inspection.
+--------------------------*/
+(function(){
+  const b64 = str => atob(str);
+  const xorDecode = (b64str, key) => {
+    const data = b64str;
+    const raw = atob(data);
+    let out = '';
+    for (let i=0;i<raw.length;i++){
+      out += String.fromCharCode(raw.charCodeAt(i) ^ key.charCodeAt(i % key.length));
+    }
+    return out;
+  };
+
+  // replace placeholders with actual encrypted strings
+  const key = 'n3x0r_k'; // small secret key stored here (change on server for harder guessing)
+  const encDana = 'XgtNAUBrU10ATwVH';
+  const encSea = 'VwNJBkpuWV4BTwlB';
+
+  function safeSet(elId, enc){
+    try{
+      if(enc && enc.indexOf('`')===-1){
+        const dec = xorDecode(enc, key);
+        document.getElementById(elId).textContent = dec;
+      } else {
+        if(elId==='dana') document.getElementById(elId).textContent='085124833755';
+        if(elId==='seabank') document.getElementById(elId).textContent='901681202793';
+      }
+    }catch(e){ /* ignore */ }
+  }
+
+  safeSet('dana', encDana);
+  safeSet('seabank', encSea);
+
+  // expose decode util for building encrypted strings in console (developer use)
+  window.__nexor = {
+    xorEncode: function(plain){
+      let out=''; for(let i=0;i<plain.length;i++){ out += String.fromCharCode(plain.charCodeAt(i) ^ key.charCodeAt(i % key.length)); }
+      return btoa(out);
+    }
+  };
+})();
+
+/* -------------------------
+ UI interactions: sound, copy, save QR, hologram popup
+--------------------------*/
+(function(){
+  const _=document, g=id=>_.getElementById(id);
+  const snd = g('clickSound'), toast = g('toast');
+
+  function play(){ try{ snd.currentTime=0; snd.play().catch(()=>{}); }catch(e){} }
+
+  window.doCopy = function(btn){
+    const p = btn.previousElementSibling || btn.parentElement.querySelector('p');
+    const text = p ? p.textContent : '';
+    navigator.clipboard.writeText(text).then(()=> {
+      play();
+      toast.style.display='block';
+      setTimeout(()=>toast.style.display='none',2000);
+    }).catch(()=>{ play(); toast.style.display='block'; setTimeout(()=>toast.style.display='none',2000); });
+  };
+
+  // Save QR with watermark + hologram popup + micro 3D float
+  g('saveQR').addEventListener('click', function(){
+    play();
+    const popup = g('popup');
+    popup.style.display='block';
+    const holo = g('holoBox');
+    holo.style.transform = 'translateZ(6px) rotateX(6deg) rotateY(3deg)';
+    setTimeout(()=>holo.style.transform='translateZ(0)', 900);
+
+    setTimeout(()=>{
+      const img = g('qrisImg');
+      if(!img || !img.src){ popup.style.display='none'; alert('QR not found'); return; }
+      const c = g('hiddenCanvas'); const ctx = c.getContext('2d');
+      const tmp = new Image(); tmp.crossOrigin='anonymous';
+      tmp.onload = function(){
+        c.width = tmp.naturalWidth; c.height = tmp.naturalHeight; ctx.clearRect(0,0,c.width,c.height);
+        ctx.drawImage(tmp,0,0);
+        const wm = 'Nexor Secure';
+        ctx.font = Math.max(12, Math.round(c.width * 0.03)) + 'px Arial';
+        ctx.fillStyle = 'rgba(0,255,255,0.9)'; ctx.textAlign = 'right'; ctx.textBaseline = 'bottom';
+        ctx.fillText(wm, c.width - 10, c.height - 8);
+        ctx.fillStyle = 'rgba(0,255,255,0.02)'; for(let y=0;y<c.height;y+=6) ctx.fillRect(0,y,c.width,1);
+        c.toBlob(function(blob){
+          const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'qris.png'; document.body.appendChild(a); a.click(); a.remove(); URL.revokeObjectURL(a.href);
+          popup.style.display='none'; toast.style.display='block'; setTimeout(()=>toast.style.display='none',1400);
+        }, 'image/png', 0.95);
+      };
+      tmp.onerror = function(){ popup.style.display='none'; alert('Gagal memuat QR'); };
+      tmp.src = img.src + (img.src.indexOf('?')===-1 ? '?v=' + Date.now() : '&v=' + Date.now());
+    }, 800);
+  });
+
+  // subtle floating HUD particles (very light)
+  (function smallParticles(){
+    const grid = document.getElementById('grid');
+    const cn = document.createElement('canvas'); cn.width = window.innerWidth; cn.height = window.innerHeight; cn.style.position='absolute';cn.style.left='0';cn.style.top='0';cn.style.zIndex=2;cn.style.pointerEvents='none'; grid.appendChild(cn);
+    const ctx = cn.getContext('2d'); let parts = []; const count = Math.max(8, Math.round(window.innerWidth/160));
+    for(let i=0;i<count;i++) parts.push({x:Math.random()*cn.width,y:Math.random()*cn.height,r:Math.random()*1.4+0.4,alpha:Math.random()*0.6+0.2,v:Math.random()*0.3+0.05});
+    function tick(){ ctx.clearRect(0,0,cn.width,cn.height); ctx.fillStyle = 'rgba(0,255,255,0.07)'; parts.forEach(p=>{ ctx.globalAlpha = p.alpha; ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fill(); p.y += p.v; if(p.y>cn.height){p.y=0;p.x=Math.random()*cn.width;} }); ctx.globalAlpha=1; requestAnimationFrame(tick); }
+    window.addEventListener('resize', ()=>{cn.width=window.innerWidth;cn.height=window.innerHeight});
+    tick();
+  })();
+
+})();
+</script>
+</body>
+</html>
